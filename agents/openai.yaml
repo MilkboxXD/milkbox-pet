@@ -1,0 +1,4 @@
+interface:
+  display_name: "Milkbox Pet"
+  short_description: "Design and approve MilkboxViewer residents"
+  default_prompt: "Use $milkbox-pet to help me choose a resident design or review my reference image, make one concept draft for discussion, and after approval ask whether I want Mixed, Fast, or Precision animation production."
