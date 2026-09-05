@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
+
+from validate_pet_images import inspect_cells
 
 from compose_from_rows import parse_hex_color, remove_chroma, save_png
 from milkbox_spec import (
@@ -31,6 +33,11 @@ def normalize_sheet(
     if chroma_key is not None:
         sheet = remove_chroma(sheet, chroma_key, chroma_tolerance)
 
+    report = {"errors": [], "warnings": []}
+    inspect_cells(sheet, SHEET_ROWS, report, strict=True, padding=1)
+    if report["errors"]:
+        raise ValueError(f"{path}: uniform cuts are unsafe; use normalize_generated_rows.py first: "
+                         + "; ".join(report["errors"]))
     output = Image.new("RGBA", (SHEET_WIDTH, SHEET_HEIGHT), (0, 0, 0, 0))
     for row in range(SHEET_ROWS):
         top = round(row * sheet.height / SHEET_ROWS)
@@ -40,8 +47,16 @@ def normalize_sheet(
             right = round((column + 1) * sheet.width / COLS)
             cell = sheet.crop((left, top, right, bottom))
             if cell.size != (CELL_WIDTH, CELL_HEIGHT):
-                cell = cell.resize((CELL_WIDTH, CELL_HEIGHT), Image.Resampling.LANCZOS)
+                fitted = ImageOps.contain(cell, (CELL_WIDTH, CELL_HEIGHT), Image.Resampling.LANCZOS)
+                cell = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
+                cell.alpha_composite(fitted, ((CELL_WIDTH - fitted.width) // 2,
+                                             (CELL_HEIGHT - fitted.height) // 2))
             output.alpha_composite(cell, (column * CELL_WIDTH, row * CELL_HEIGHT))
+    report = {"errors": [], "warnings": []}
+    inspect_cells(output, SHEET_ROWS, report, strict=True, padding=8)
+    if report["errors"]:
+        raise ValueError(f"{path}: standardized cells lack safe margins; normalize rows first: "
+                         + "; ".join(report["errors"]))
     return output
 
 
@@ -84,3 +99,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

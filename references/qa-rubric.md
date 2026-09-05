@@ -9,7 +9,10 @@ Do not accept a delivery until deterministic checks and visual inspection both p
 - Standardized atlas is exactly `1536x2496`, 8 columns × 12 rows, with `192x208` cells.
 - PNG or WebP with a real alpha channel.
 - Each upload sheet is at most 12 MiB; final atlas is at most 4 MiB.
-- No visible content touches a cell edge, crosses into another cell, or is clipped.
+- Standardized delivery must pass `--strict --frame-counts frame-counts.json`.
+- Keep at least 8 px of transparent margin inside each cell; reject crossed edges, clipped content, whole blank actions, internal empty slots or counts differing from the approved plan.
+- Inspect both cut-line overlays at fixed 192 px / 208 px intervals: each populated cell contains exactly one complete pose and its own props, without neighboring fragments. Overlays are review-only.
+- Confirm the atlas pixels match the two delivery sheets.
 - Fully transparent cells remain in position and do not shift later frames.
 
 ## Identity
@@ -23,7 +26,7 @@ Do not accept a delivery until deterministic checks and visual inspection both p
 - Every row communicates the state described in `animation-rows.md`.
 - First and last meaningful frames form a reasonable loop.
 - `running-right` faces right and `running-left` faces left with alternating cadence.
-- Scale, center, and baseline do not pop between frames unless motivated by the action.
+- Scale, center, and baseline do not pop between frames unless motivated by the action. Use one row-wide scale and reviewed anchors; preserve airborne motion rather than automatically grounding every frame.
 - `grabbed` reads as externally suspended or dragged without depicting UI or a cursor.
 - Repeated frames are intentional; accidental identical or missing poses should be repaired.
 
@@ -41,3 +44,4 @@ Do not accept a delivery until deterministic checks and visual inspection both p
 3. In Fast mode, regenerate the affected whole sheet or explicitly switch the failed rows to Mixed-mode repair.
 4. Regenerate the canonical character only when identity is broadly wrong.
 5. Rebuild the atlas and repeat previews after the smallest necessary repair.
+

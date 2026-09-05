@@ -1,13 +1,13 @@
 ---
 name: milkbox-pet
-description: Create MilkboxViewer resident character artwork through a mandatory user-visible staged workflow: declare the workflow and acceptance criteria, establish character direction, generate one canonical concept, obtain explicit character approval, discuss all 12 animation actions, obtain explicit animation-plan approval, select a production mode, then generate, QA, repair, and package the two-sheet 8x6 delivery and final pet-v2 8x12 atlas. Never silently skip approval or action-discussion stages; do not use for the Codex 8x9 pet format.
+description: "Create, repair, and validate MilkboxViewer resident artwork through character approval, twelve-action planning, image generation, deterministic frame alignment, visual QA, and two-sheet 8x6 / pet-v2 8x12 delivery. Use for MilkboxViewer residents, not the Codex 8x9 pet format."
 ---
 
 # Milkbox Pet
 
 Create a consistent animated resident character for MilkboxViewer while preserving the image-generation, deterministic assembly, and visual-QA principles of the official `hatch-pet` workflow.
 
-Read [references/milkboxviewer-contract.md](references/milkboxviewer-contract.md) before producing, repairing, validating, or packaging images. Read [references/animation-rows.md](references/animation-rows.md) before discussing or writing animation-row prompts. Use [references/qa-rubric.md](references/qa-rubric.md) for final review.
+Read [references/milkboxviewer-contract.md](references/milkboxviewer-contract.md) before producing, repairing, validating, or packaging images. Read [references/animation-rows.md](references/animation-rows.md) before discussing or writing animation-row prompts. Read [references/frame-alignment.md](references/frame-alignment.md) before production or alignment repair. Use [references/qa-rubric.md](references/qa-rubric.md) for final review.
 
 ## Mandatory user-visible workflow
 
@@ -61,7 +61,8 @@ At minimum, state all of the following:
 - Background must contain **genuine transparency**.
 - No visible grid lines, borders, labels, action names, frame numbers, UI, scenery, watermarks, or explanatory text.
 - Character identity, proportions, palette, clothing, markings, and persistent props must remain consistent.
-- Visible pixels must remain inside their own reserved cells.
+- Visible pixels must remain inside their own reserved cells with at least 8 px of transparent padding in standardized delivery files.
+- Both sheets must support the same fixed straight cuts every 192 px horizontally and 208 px vertically; inspect separate cut-line overlays before acceptance.
 - Sheet 1 contains actions 1–6.
 - Sheet 2 contains actions 7–12.
 - Final standardized atlas is **1536 × 2496 px**, 8 columns × 12 rows.
@@ -237,6 +238,8 @@ Explain the tradeoff in one short sentence. If the user asks the skill to decide
 
 Do not begin visual generation while waiting for the mode selection.
 
+Record the approved useful frame count for each state in `frame-counts.json`; counts include intentional holds and exclude unused trailing cells.
+
 Exit condition: both the twelve-action plan and production mode are confirmed.
 
 Only now may animation production begin.
@@ -268,6 +271,8 @@ Keep file-format language separate from image-generation language. The delivery 
 In Fast or Mixed mode, generate two complete images from the approved canonical character and approved action plan. Describe each image as six stacked horizontal animation sequences in the fixed action order. Each sequence shows one continuous action progressing from left to right in no more than eight successive frames. Ask for consistent spacing, scale, center, and baseline; unused trailing frame positions remain fully transparent. Sheet 1 contains actions 1–6 and Sheet 2 contains actions 7–12. Image tools may require one generation call per sheet; do not claim that both images came from a single call when they did not.
 
 In Precision mode, or when Mixed-mode QA identifies a failing action, prompt for one horizontal continuous animation sequence for the required action. The motion progresses from left to right in up to eight successive frames; if fewer frames communicate the motion, leave unused trailing frame positions fully transparent. Do not ask the model merely for an “eight-slot strip.” Attach the approved canonical character and the relevant layout guide or prior approved output whenever the image tool supports references.
+
+Request the same eight reserved horizontal positions across every row, with complete poses and transparent gutters. Six-frame actions use only positions 1–6, leaving 7–8 transparent; never distribute fewer frames across the whole row. Do not draw positioning guides.
 
 Prefer transparent output. A flat chroma background may be used only when it can be removed cleanly without deleting character colors.
 
@@ -305,28 +310,33 @@ Create this production checklist only after Stage 6 is fully satisfied:
 2. Lock the explicitly approved twelve-action plan.
 3. Record the selected production mode.
 4. Generate the initial sheets or rows for that mode.
-5. Standardize the delivery and build the atlas.
-6. Proceed to Stage 8 for validation and visual QA.
+5. Extract complete frames from reviewed source rows, register them with a common row scale, and pack fixed cells as described in `references/frame-alignment.md`. Generated artwork is not a delivery sheet.
+6. Compose the normalized rows and build the atlas.
+7. Proceed to Stage 8 for validation and visual QA, including cut-line overlays.
 
 ### Mixed and Fast mode
 
 Generate the two source images as six stacked, left-to-right animation sequences per image. Do not use the bare technical phrase “8×6 grid” as the image prompt.
 
-After generation, interpret the reserved frame positions as the technical 8×6 delivery layout, standardize them, and create the atlas:
+After generation, inspect the actual row boundaries and prepare `extraction.json` using [references/frame-alignment.md](references/frame-alignment.md). Extract each row's approved number of complete frames, then deterministically pack fixed cells:
 
 ```powershell
-python scripts/standardize_sheets.py --sheet1 <generated-sheet-1> --sheet2 <generated-sheet-2> --output-dir <delivery-directory>
+python scripts/normalize_generated_rows.py --manifest extraction.json --output-dir normalized-rows
+python scripts/compose_from_rows.py --rows-dir normalized-rows --output-dir delivery
 ```
+
+Never pass unaligned source artwork directly to an equal-grid slicer. If extraction cannot separate complete poses without cutting visible pixels, repair/regenerate the failed row under the selected mode's existing repair policy. Do not silently drop pixels or change approved frame counts.
 
 ### Precision mode
 
-Compose approved row strips with:
+Normalize the generated strips before composition:
 
 ```powershell
-python scripts/compose_from_rows.py --rows-dir <rows-directory> --output-dir <delivery-directory>
+python scripts/normalize_generated_rows.py --input-dir source-rows --frame-counts frame-counts.json --output-dir normalized-rows
+python scripts/compose_from_rows.py --rows-dir normalized-rows --output-dir delivery
 ```
 
-The rows directory must contain `<state>.png` or `<state>.webp` for all twelve state names. Each source is interpreted as eight equal horizontal slots. The composer normalizes every slot into `192x208`, preserves aspect ratio, centers the visible content, and writes:
+Use the manifest route when explicit cuts or registration anchors are needed. The normalized directory must contain `<state>.png` or `<state>.webp` for all twelve states, each exactly `1536x208`. The composer preserves these registered frames and writes:
 
 ```text
 delivery/
@@ -335,14 +345,14 @@ delivery/
   milkbox-pet-v2-atlas.png
 ```
 
-If generated rows use a flat chroma key, pass `--chroma-key RRGGBB` and an appropriate `--chroma-tolerance`; inspect edges visually afterward.
+All production modes must use a common scale within each action, keep 8 px transparent cell margins, and preserve approved intentional movement through registration anchors. Do not independently enlarge each pose to fill its cell. See the alignment reference for original alpha/chroma handling and manifest coordinates.
 
 ## Stage 8: QA, repair, and delivery
 
 Validate delivery images with:
 
 ```powershell
-python scripts/validate_pet_images.py --sheet1 <sheet-1> --sheet2 <sheet-2> --atlas <atlas> --json-out <validation.json>
+python scripts/validate_pet_images.py --sheet1 <sheet-1> --sheet2 <sheet-2> --atlas <atlas> --strict --frame-counts frame-counts.json --json-out <validation.json>
 ```
 
 Render per-action GIF previews with:
@@ -351,17 +361,19 @@ Render per-action GIF previews with:
 python scripts/render_previews.py --sheet1 <sheet-1> --sheet2 <sheet-2> --output-dir <preview-directory>
 ```
 
+The preview command also writes separate `sheet-1-cut-overlay.png` and `sheet-2-cut-overlay.png` QA images. Inspect every cell against the fixed cut lines and 8 px margins; never deliver these overlays as spritesheets.
+
 Render previews and inspect all twelve action semantics. Deterministic validation cannot detect a semantically wrong pose, identity drift, incorrect action meaning, or incorrect row order by itself, so visual QA is mandatory.
 
-In Mixed mode, for each failing state generate one corrected horizontal continuous animation sequence of up to eight frames, with unused trailing positions transparent, and replace it in the relevant standardized sheet:
+In Mixed mode, for each failing state generate one corrected horizontal continuous animation sequence of up to eight frames, with unused trailing positions transparent, normalize it using the alignment workflow, and replace the normalized row in the relevant standardized sheet:
 
 ```powershell
-python scripts/replace_sheet_row.py --sheet <current-sheet> --sheet-number <1-or-2> --state <state> --replacement <corrected-row> --output <repaired-sheet>
+python scripts/replace_sheet_row.py --sheet <current-sheet> --sheet-number <1-or-2> --state <state> --replacement <normalized-corrected-row> --output <repaired-sheet>
 ```
 
 Use the state contract to select the expected sheet and row; the script rejects a mismatched `--sheet-number`.
 
-After all replacements, run `standardize_sheets.py` again with the repaired pair to rebuild the final atlas, followed by validation and preview generation.
+After all replacements, run `standardize_sheets.py` on the already aligned sheets with the repaired pair to rebuild the final atlas, followed by validation and preview generation.
 
 Stop repairing when every deterministic check passes and visual QA accepts every row. Do not regenerate an accepted row merely for stylistic variety.
 
@@ -371,7 +383,7 @@ Repair one frame or one row before regenerating both sheets. Regenerate the cano
 
 If the standardized final atlas exceeds 4 MiB, compress or optimize it without changing atlas geometry, alpha transparency, row order, cell boundaries, or visible character fidelity, then validate it again.
 
-Input sheets are allowed to differ from `1536x1248` because MilkboxViewer provides adjustable cut lines. Treat nonstandard dimensions as a warning, not an automatic failure, as long as the 8×6 layout remains clear. Images produced by this skill should target the exact standard size whenever deterministic composition is available.
+Input sheets are allowed to differ from `1536x1248` because MilkboxViewer provides adjustable cut lines. Treat nonstandard dimensions as a warning, not an automatic failure, as long as the 8×6 layout remains clear. Images produced by this skill must be deterministically composed at the exact standard size and pass `--strict` validation. The source-upload warning policy never relaxes final acceptance.
 
 ## Visual constraints
 

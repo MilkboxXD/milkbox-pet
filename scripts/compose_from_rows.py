@@ -58,48 +58,26 @@ def slot_bounds(width: int, index: int) -> tuple[int, int]:
     return round(index * width / COLS), round((index + 1) * width / COLS)
 
 
-def normalize_slot(slot: Image.Image, padding: int) -> Image.Image:
-    slot = slot.convert("RGBA")
-    alpha = slot.getchannel("A")
-    bbox = alpha.getbbox()
-    output = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
-    if bbox is None:
-        return output
-
-    content = slot.crop(bbox)
-    max_width = CELL_WIDTH - 2 * padding
-    max_height = CELL_HEIGHT - 2 * padding
-    scale = min(max_width / content.width, max_height / content.height, 1.0)
-    new_size = (
-        max(1, round(content.width * scale)),
-        max(1, round(content.height * scale)),
-    )
-    if new_size != content.size:
-        content = content.resize(new_size, Image.Resampling.LANCZOS)
-
-    x = (CELL_WIDTH - content.width) // 2
-    y = CELL_HEIGHT - padding - content.height
-    y = max(padding, y)
-    output.alpha_composite(content, (x, y))
-    return output
-
-
 def load_normalized_row(
     path: Path,
     chroma_key: tuple[int, int, int] | None,
     chroma_tolerance: int,
     padding: int,
 ) -> list[Image.Image]:
+    """Compose only already registered rows; preserve frame positions and scale."""
+    from validate_pet_images import inspect_cells
+
     with Image.open(path) as source:
         row = source.convert("RGBA")
     if chroma_key is not None:
         row = remove_chroma(row, chroma_key, chroma_tolerance)
-
-    frames = []
-    for index in range(COLS):
-        left, right = slot_bounds(row.width, index)
-        frames.append(normalize_slot(row.crop((left, 0, right, row.height)), padding))
-    return frames
+    if row.size != (SHEET_WIDTH, CELL_HEIGHT):
+        raise ValueError(f"{path}: normalize_generated_rows.py must first create a 1536x208 row")
+    report = {"errors": [], "warnings": []}
+    inspect_cells(row, 1, report, strict=True, padding=max(8, padding))
+    if report["errors"]:
+        raise ValueError(f"{path}: " + "; ".join(report["errors"]))
+    return [row.crop((i * CELL_WIDTH, 0, (i + 1) * CELL_WIDTH, CELL_HEIGHT)) for i in range(COLS)]
 
 
 def build_sheet(rows: list[list[Image.Image]]) -> Image.Image:
@@ -159,3 +137,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

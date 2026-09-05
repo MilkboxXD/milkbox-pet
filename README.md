@@ -152,7 +152,7 @@ Copy-Item -Recurse -Force `
 - PNG 或 WebP
 - 不超過 4 MiB
 
-若生成工具無法輸出精確尺寸，可先保留完整 8×6 排列，再交由 MilkboxViewer 居民中心調整切割線。完整契約請參考 [`references/milkboxviewer-contract.md`](references/milkboxviewer-contract.md)。
+生成工具輸出的圖片先視為動作素材，必須逐格擷取並由程式重排成標準尺寸後才可交付。居民中心仍支援其他尺寸的外部上傳圖片。完整契約請參考 [`references/milkboxviewer-contract.md`](references/milkboxviewer-contract.md)。
 
 ## 混合模式（預設）
 
@@ -161,19 +161,21 @@ Copy-Item -Recurse -Force `
 `8×6` 是切割與交付格式，不是建議直接交給生圖模型的提示詞。提示模型時不要只寫「8×6 網格」或「八格橫列」，應描述「連續逐格動畫、由左到右、最多 8 個影格、未使用位置透明」。例如：
 
 ```text
-Create six stacked horizontal animation sequences for the approved character. Each sequence depicts one continuous action progressing from left to right in up to eight successive frames. Keep character identity, scale, center, and baseline consistent. If an action needs fewer than eight frames, leave the unused trailing frame positions fully transparent. No text, labels, borders, visible grid lines, UI, or scene background.
+Create six stacked horizontal animation sequences for the approved character. Each sequence depicts one continuous action progressing from left to right in up to eight successive frames. Keep character identity, scale, center, and baseline consistent. If an action needs fewer than eight frames, leave the unused trailing frame positions fully transparent. All six sequences share the same eight reserved horizontal positions. A six-frame action occupies positions 1–6 only; do not spread it across the full width. Leave transparent gutters around every complete pose and prop. No text, labels, borders, visible grid lines, UI, or scene background.
 ```
 
-將兩張均分網格標準化並合併成 atlas：
+先依實際影像確認六列的範圍，建立 `extraction.json`，填入來源、每列範圍及核准的影格數。再擷取完整影格、共用縮放比例並重排固定格位。格式與操作細節見 [`references/frame-alignment.md`](references/frame-alignment.md)。
 
 ```powershell
-python scripts/standardize_sheets.py `
-  --sheet1 generated/sheet-1.png `
-  --sheet2 generated/sheet-2.png `
-  --output-dir delivery
+python scripts/normalize_generated_rows.py --manifest extraction.json --output-dir normalized-rows
+python scripts/compose_from_rows.py --rows-dir normalized-rows --output-dir delivery
 ```
 
+不可直接把未對齊的生成圖八等分或六等分。若無法安全分開角色，須依所選模式修復或重生有問題的動作；不可強切、刪掉像素或自行減少核准影格數。
+
 接著執行格式驗證與 GIF 預覽。若某個動作出現錯誤姿勢、角色漂移、跨格或方向錯誤，只重新生成該動作的橫向連續動畫；最多 8 個影格，不足的位置留透明空白。
+
+修補圖也要先透過上述擷取流程產生 `1536×208` 的標準動作列。以下 `normalized-repairs/` 只放已完成重排的列。
 
 例如修補第一張圖的 `waving`：
 
@@ -182,7 +184,7 @@ python scripts/replace_sheet_row.py `
   --sheet delivery/milkbox-pet-sheet-1.png `
   --sheet-number 1 `
   --state waving `
-  --replacement repairs/waving.png `
+  --replacement normalized-repairs/waving.png `
   --output repaired/milkbox-pet-sheet-1.png
 ```
 
@@ -193,7 +195,7 @@ python scripts/replace_sheet_row.py `
   --sheet delivery/milkbox-pet-sheet-2.png `
   --sheet-number 2 `
   --state failed `
-  --replacement repairs/failed.png `
+  --replacement normalized-repairs/failed.png `
   --output repaired/milkbox-pet-sheet-2.png
 ```
 
@@ -203,7 +205,7 @@ python scripts/replace_sheet_row.py `
 
 ## 快速模式
 
-快速模式與混合模式同樣先生成兩張圖片，每張包含六段橫向連續動畫，再使用 `standardize_sheets.py`、驗證器與 GIF 預覽。差別是快速模式不會自動逐列修補；若驗證失敗，使用者可以選擇重新生成整張，或切換成混合模式修補特定動作。
+快速模式與混合模式同樣先生成兩張圖片，每張包含六段橫向連續動畫，再使用相同的擷取、固定格位重排、驗證器與 GIF 預覽流程。差別是快速模式不會自動逐列修補；若驗證失敗，使用者可以選擇重新生成整張，或切換成混合模式修補特定動作。
 
 ## 精修模式：從 12 段連續動畫組版
 
@@ -225,12 +227,11 @@ rows/
   grabbed.png
 ```
 
-組版工具會把每段動畫視為八個等寬的保留位置；這是組版規則，不是生圖提示詞。執行：
+依已核准動作方案建立 `frame-counts.json`（十二個狀態名稱對應 1～8 的整數）。先擷取不等距影格並重排；動作有騰空、上下浮動時改用含定位基準點的擷取清單，保留原本位移。組版器只拼接已標準化的列，保留各格比例與位置。執行：
 
 ```powershell
-python scripts/compose_from_rows.py `
-  --rows-dir rows `
-  --output-dir delivery
+python scripts/normalize_generated_rows.py --input-dir rows --frame-counts frame-counts.json --output-dir normalized-rows
+python scripts/compose_from_rows.py --rows-dir normalized-rows --output-dir delivery
 ```
 
 輸出：
@@ -245,14 +246,15 @@ delivery/
 若來源使用單色去背背景：
 
 ```powershell
-python scripts/compose_from_rows.py `
-  --rows-dir rows `
-  --output-dir delivery `
+python scripts/normalize_generated_rows.py `
+  --input-dir rows `
+  --frame-counts frame-counts.json `
+  --output-dir normalized-rows `
   --chroma-key 00FF00 `
   --chroma-tolerance 18
 ```
 
-去背後仍需人工檢查邊緣與角色顏色是否被誤刪。
+去背後仍需人工檢查邊緣與角色顏色是否被誤刪，再以 `compose_from_rows.py` 組合 `normalized-rows/`。JPEG 或棋盤格截圖不能代替原始透明 PNG／WebP。
 
 ## 驗證圖片
 
@@ -261,6 +263,8 @@ python scripts/validate_pet_images.py `
   --sheet1 delivery/milkbox-pet-sheet-1.png `
   --sheet2 delivery/milkbox-pet-sheet-2.png `
   --atlas delivery/milkbox-pet-v2-atlas.png `
+  --strict `
+  --frame-counts frame-counts.json `
   --json-out delivery/validation.json
 ```
 
@@ -270,11 +274,16 @@ python scripts/validate_pet_images.py `
 - Alpha 透明度
 - 標準尺寸
 - 上傳圖與 atlas 檔案大小限制
-- 完全空白列
-- 角色像素是否碰到均分格線邊緣
+- 完全空白列、列中間的空格、影格數是否符合核准方案
+- 每格四周至少 8 px 的透明留白
+- atlas 像素是否與兩張交付圖相符
 - 透明像素是否保留隱藏 RGB 殘值
 
-非標準尺寸的兩張原始圖只會產生警告，因為居民中心仍能調整切割線；非標準尺寸的最終 atlas 則會驗證失敗。
+正式交付使用 `--strict`：尺寸錯誤、留白不足、空白動作或影格數不符都會失敗。檢查外部來源圖時可省略 `--strict`，非標準來源尺寸會列為警告；此模式不能代替本 Skill 的最終驗收。
+
+`standardize_sheets.py` 僅用於已對齊的兩張圖或修補後重建 atlas，會先檢查均分切線是否安全，不用來修復未對齊素材。
+
+預覽指令也會產生 `sheet-1-cut-overlay.png` 與 `sheet-2-cut-overlay.png`：以固定 192／208 px 裁切線和 8 px 留白框檢查完整角色、尾巴及配件。這兩張只供驗收，不能當作正式交付圖。GIF 會略過末端未使用空格，避免短動作播放時消失；仍需逐列確認動作、造型與尺寸穩定。
 
 ## 產生動畫預覽
 
@@ -293,11 +302,13 @@ python scripts/render_previews.py `
 
 - Python 3.10 或更新版本
 - [Pillow](https://pypi.org/project/pillow/)
+- [NumPy](https://pypi.org/project/numpy/)（影格擷取）
 
 執行端到端 smoke test：
 
 ```powershell
 python tests/smoke_test.py
+python -m unittest discover -s tests -p "test_*.py"
 ```
 
 測試會在暫存資料夾驗證三條確定性路徑：12 個動作列組版、兩張完整圖的標準化與合併，以及單一失敗列替換。測試也會完成格式驗證與 12 個 GIF 預覽，結束後自動移除測試圖片。
@@ -317,10 +328,12 @@ milkbox-pet/
 ├── agents/
 │   └── openai.yaml
 ├── references/
+│   ├── frame-alignment.md
 │   ├── animation-rows.md
 │   ├── milkboxviewer-contract.md
 │   └── qa-rubric.md
 ├── scripts/
+│   ├── normalize_generated_rows.py
 │   ├── compose_from_rows.py
 │   ├── milkbox_spec.py
 │   ├── replace_sheet_row.py
@@ -332,3 +345,4 @@ milkbox-pet/
 ```
 
 `output/` 是實際生成或測試角色時的工作資料，不是 Skill 本身的必要組成。
+
