@@ -1,0 +1,12 @@
+Milkbox Pet
+Copyright 2026 TwinkleStars1029
+
+This project is based in part on OpenAI's curated "hatch-pet" skill:
+https://github.com/openai/skills/tree/main/skills/.curated/hatch-pet
+
+The upstream hatch-pet skill is licensed under the Apache License,
+Version 2.0.
+
+Milkbox Pet contains modifications and extensions for the
+MilkboxViewer resident-character workflow, animation contract,
+image processing, validation, and packaging.
